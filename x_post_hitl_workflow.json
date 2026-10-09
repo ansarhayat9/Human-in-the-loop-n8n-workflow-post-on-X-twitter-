@@ -1,0 +1,400 @@
+{
+  "name": "X Post Human-in-the-Loop Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "X Post Generator",
+        "formDescription": "Enter a topic and I will research it and draft an X post for your approval.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Topic",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Tone",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Professional"
+                  },
+                  {
+                    "option": "Casual"
+                  },
+                  {
+                    "option": "Witty"
+                  },
+                  {
+                    "option": "Educational"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e5b1bab2-457b-4e10-b82a-b348943ed19b",
+      "name": "On form submission",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "58879632-377e-43b3-86ab-2e269b3af08f"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Topic: {{ $json.Topic }}\nTone: {{ $json.Tone }}\n\nResearch this topic and write one X post.",
+        "options": {
+          "systemMessage": "You are an expert social media writer who creates engaging posts for X (Twitter).\n\nPROCESS\n1. Use the Tavily Search tool to research the given topic. Run at most 2 searches and prefer recent, credible information.\n2. Choose the single most interesting and accurate insight.\n3. Write exactly ONE post about it in the requested tone.\n\nRULES\n- Target length: around 200 characters. Never exceed 260 characters, including hashtags and spaces.\n- Open with a strong hook in the first line.\n- Use at most 2 relevant hashtags, placed at the end.\n- Use at most 1-2 emojis.\n- Use only facts found in the search results. Never invent statistics or quotes.\n- Do not include links.\n- Do not mention that you searched or used any tool.\n\nOUTPUT FORMAT\nReturn ONLY the final post text. No quotation marks, no labels, no explanation, no character count."
+        }
+      },
+      "id": "3f384e35-fc21-4eb1-81ed-3ff5cfce91c5",
+      "name": "X Post Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "0fc0f89f-b971-4678-b084-385e9524e14a",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        260,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Search the web for current, credible information about a topic. Input: a short search query.",
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"{{ $fromAI('query', 'The web search query about the topic', 'string') }}\",\n  \"search_depth\": \"basic\",\n  \"max_results\": 3\n}",
+        "options": {}
+      },
+      "id": "038d2689-bfd6-406a-b7e6-5e3a3f9ac39c",
+      "name": "Tavily Search",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "132d06da-e0e7-4d95-bb8e-9f88cf9ea43b",
+              "name": "post",
+              "value": "={{ $json.output.trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "1c9ae792-62e8-4ee9-b296-a93822681c18",
+              "name": "charCount",
+              "value": "={{ $json.output.trim().length }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fc0aa107-32b9-4ae7-b380-19d9d658a7c6",
+      "name": "Set Post",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendAndWait",
+        "sendTo": "YOUR_EMAIL@example.com",
+        "subject": "Approve your X post draft",
+        "message": "=Here is your draft X post:\n\n{{ $json.post }}\n\n({{ $json.charCount }} characters)\n\nClick the button below. Type \"go\" to publish, or tell me what to change.",
+        "responseType": "freeText",
+        "options": {}
+      },
+      "id": "75dd8a78-8cbb-48f4-a57d-588f17fe5eeb",
+      "name": "Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        200
+      ],
+      "webhookId": "cff3a58d-59ed-4db6-b5e4-7210ef33167e"
+    },
+    {
+      "parameters": {
+        "inputText": "={{ $json.data.text }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "approved",
+              "description": "The user clearly approves the post and wants it published exactly as is. Examples: go, ok, approved, looks good, post it, yes, publish, perfect, send it."
+            },
+            {
+              "category": "declined",
+              "description": "The user wants ANY change, edit, rewrite, different tone, shorter or longer text, different hashtags, a new angle, or rejects the post. This includes conditional approval such as 'good but change the hashtags'."
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "Please classify the text provided by the user into one of the following categories: {categories}, and use the provided formatting instructions below. Don't explain, and only output the json.\nIf the message is ambiguous or contains any change request, always choose \"declined\". Only choose \"approved\" when the user clearly confirms publishing with no changes."
+        }
+      },
+      "id": "f9d53036-c48d-43bd-a51a-c24407e1165d",
+      "name": "Text Classifier1",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "cacd7a67-3460-42a6-a2ce-292f5990d19e",
+      "name": "Groq Chat Model Classifier",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $('Set Post').last().json.post }}",
+        "additionalFields": {}
+      },
+      "id": "6acf0eff-c312-4b09-ad3b-38723135d6df",
+      "name": "X Post",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=ORIGINAL TOPIC: {{ $('On form submission').first().json.Topic }}\n\nCURRENT POST:\n{{ $('Set Post').last().json.post }}\n\nUSER FEEDBACK:\n{{ $json.data.text }}",
+        "options": {
+          "systemMessage": "You are an expert X (Twitter) editor. You receive a draft post and the user's feedback about it.\n\nPROCESS\n1. Read the feedback carefully.\n2. If the feedback is a small change (tone, wording, hashtags, length, emoji), edit the current post and keep everything else the same.\n3. If the user wants a different angle, or is unhappy with the whole post, write a completely new post on the original topic.\n4. Use the Tavily Search tool ONLY if the feedback requires new facts or information. Otherwise do not search.\n\nRULES\n- Target length: around 200 characters. Never exceed 260 characters, including hashtags and spaces.\n- Use at most 2 relevant hashtags and 1-2 emojis.\n- Use only verified facts. Never invent statistics or quotes.\n- Do not include links.\n- Always apply the user's feedback exactly.\n\nOUTPUT FORMAT\nReturn ONLY the revised post text. No quotation marks, no labels, no explanation."
+        }
+      },
+      "id": "af9288e8-564d-45a7-984a-aa7c6db78a26",
+      "name": "Revision Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1500,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "5f9a5199-d451-47ae-93f6-42b4efd99301",
+      "name": "Groq Chat Model Revision",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Search the web for current, credible information about a topic. Input: a short search query.",
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"{{ $fromAI('query', 'The web search query about the topic', 'string') }}\",\n  \"search_depth\": \"basic\",\n  \"max_results\": 3\n}",
+        "options": {}
+      },
+      "id": "027b9964-cf25-4b3d-91f2-ec869a1fc409",
+      "name": "Tavily Search1",
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "X Post Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X Post Agent": {
+      "main": [
+        [
+          {
+            "node": "Set Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "X Post Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tavily Search": {
+      "ai_tool": [
+        [
+          {
+            "node": "X Post Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Post": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail": {
+      "main": [
+        [
+          {
+            "node": "Text Classifier1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Classifier1": {
+      "main": [
+        [
+          {
+            "node": "X Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revision Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model Classifier": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Text Classifier1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revision Agent": {
+      "main": [
+        [
+          {
+            "node": "Set Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model Revision": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Revision Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tavily Search1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Revision Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
